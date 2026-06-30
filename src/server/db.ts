@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { User, Team, TeamMember, Scan, SystemLog } from '../types.js';
 
 const DB_FILE = path.join(process.cwd(), 'database.json');
+const isReadOnlyRuntime = process.env.VERCEL === '1';
 
 // --- Supabase Client Setup ---
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -77,6 +78,18 @@ interface DatabaseSchema {
   scans: Scan[];
   logs: SystemLog[];
 }
+
+function createSeededDatabase(): DatabaseSchema {
+  return JSON.parse(JSON.stringify({
+    users: initialUsers,
+    teams: initialTeams,
+    team_members: initialTeamMembers,
+    scans: initialScans,
+    logs: initialLogs
+  }));
+}
+
+let inMemoryDb: DatabaseSchema | null = null;
 
 // Initial Seeding Data
 const initialUsers: User[] = [
@@ -266,14 +279,17 @@ const initialLogs: SystemLog[] = [
 
 export class LocalDB {
   private static load(): DatabaseSchema {
+    if (inMemoryDb) {
+      return inMemoryDb;
+    }
+
+    if (isReadOnlyRuntime) {
+      inMemoryDb = createSeededDatabase();
+      return inMemoryDb;
+    }
+
     if (!fs.existsSync(DB_FILE)) {
-      const defaultData: DatabaseSchema = {
-        users: initialUsers,
-        teams: initialTeams,
-        team_members: initialTeamMembers,
-        scans: initialScans,
-        logs: initialLogs
-      };
+      const defaultData = createSeededDatabase();
       fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
       return defaultData;
     }
@@ -282,17 +298,15 @@ export class LocalDB {
       return JSON.parse(data);
     } catch (e) {
       console.error('Error reading database file, returning seeded values', e);
-      return {
-        users: initialUsers,
-        teams: initialTeams,
-        team_members: initialTeamMembers,
-        scans: initialScans,
-        logs: initialLogs
-      };
+      return createSeededDatabase();
     }
   }
 
   private static save(data: DatabaseSchema): void {
+    if (isReadOnlyRuntime) {
+      inMemoryDb = data;
+      return;
+    }
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   }
 
