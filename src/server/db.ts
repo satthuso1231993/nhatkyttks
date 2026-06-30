@@ -41,6 +41,18 @@ if (isSupabaseConfigured) {
   console.log('Supabase environment variables not configured. Using local JSON database as fallback.');
 }
 
+export function getDbRuntimeInfo() {
+  return {
+    isReadOnlyRuntime,
+    hasSupabaseUrl: !!supabaseUrl,
+    hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    hasAnonKey: !!process.env.SUPABASE_ANON_KEY,
+    isSupabaseConfigured,
+    isSupabaseClientReady: !!supabase,
+    dbFile: DB_FILE,
+  };
+}
+
 // --- ID Mapping Helpers ---
 // To seamlessly bridge local mock IDs ("user-admin", "team-1") with Supabase UUIDs
 const idMap: Record<string, string> = {

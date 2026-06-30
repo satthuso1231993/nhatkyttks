@@ -6,7 +6,7 @@
 import 'dotenv/config';
 import express from 'express';
 import * as path from 'path';
-import { LocalDB } from './src/server/db.js';
+import { getDbRuntimeInfo, LocalDB } from './src/server/db.js';
 import { Scan, Team } from './src/types.js';
 
 const app = express();
@@ -23,6 +23,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ==========================================
 
 // --- Auth Endpoints ---
+app.get('/api/debug/runtime', async (_req, res) => {
+  try {
+    const runtime = getDbRuntimeInfo();
+    const users = await LocalDB.getUsers();
+    res.json({
+      runtime,
+      usersCount: users.length,
+      firstUserId: users[0]?.id || null,
+      firstUsername: users[0]?.username || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
