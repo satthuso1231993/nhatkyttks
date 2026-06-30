@@ -1,0 +1,6 @@
+{
+  "name": "CSGT Plate Scanner",
+  "description": "Hệ thống Web Progressive App (PWA) hỗ trợ lực lượng CSGT quét biển số xe thông minh bằng camera, nhận dạng YOLO/OCR tự động và quản lý tổ công tác tuần tra.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,22 @@
+# Docker Compose orchestrator for CSGT License Plate Scanner
+version: '3.8'
+
+services:
+  csgt-scanner-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: csgt_scanner_pwa
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - APP_URL=${APP_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    restart: always
+    volumes:
+      - ./database.json:/app/database.json # Fallback local persistence when Supabase is not configured
