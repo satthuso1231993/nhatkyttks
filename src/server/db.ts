@@ -53,6 +53,32 @@ export function getDbRuntimeInfo() {
   };
 }
 
+export async function debugSupabaseProbe() {
+  if (!supabase) {
+    return {
+      enabled: false,
+      counts: null,
+      errors: null,
+    };
+  }
+
+  const tables = ['users', 'teams', 'team_members', 'scans', 'logs'] as const;
+  const counts: Record<string, number | null> = {};
+  const errors: Record<string, string | null> = {};
+
+  for (const table of tables) {
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true });
+    counts[table] = count ?? null;
+    errors[table] = error?.message ?? null;
+  }
+
+  return {
+    enabled: true,
+    counts,
+    errors,
+  };
+}
+
 // --- ID Mapping Helpers ---
 // To seamlessly bridge local mock IDs ("user-admin", "team-1") with Supabase UUIDs
 const idMap: Record<string, string> = {

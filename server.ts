@@ -6,7 +6,7 @@
 import 'dotenv/config';
 import express from 'express';
 import * as path from 'path';
-import { getDbRuntimeInfo, LocalDB } from './src/server/db.js';
+import { debugSupabaseProbe, getDbRuntimeInfo, LocalDB } from './src/server/db.js';
 import { Scan, Team } from './src/types.js';
 
 const app = express();
@@ -26,9 +26,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.get('/api/debug/runtime', async (_req, res) => {
   try {
     const runtime = getDbRuntimeInfo();
+    const probe = await debugSupabaseProbe();
     const users = await LocalDB.getUsers();
     res.json({
       runtime,
+      probe,
       usersCount: users.length,
       firstUserId: users[0]?.id || null,
       firstUsername: users[0]?.username || null,
