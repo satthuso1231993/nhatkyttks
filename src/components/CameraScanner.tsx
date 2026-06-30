@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Camera, RefreshCw, Zap, ShieldAlert, CheckCircle, Navigation, Eye, Check, AlertTriangle } from 'lucide-react';
 import { User, Scan } from '../types.js';
+import { recognizePlateFromDataUrl } from '../lib/localPlateOcr.js';
 
 interface CameraScannerProps {
   currentUser: User;
@@ -162,7 +163,7 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
     return () => stopCamera();
   }, [facingMode]);
 
-  // Autoloop simulator for YOLO matching & auto OCR triggers
+  // Autoloop simulator for local plate detection triggers
   useEffect(() => {
     if (cameraActive && autoMode) {
       scanIntervalRef.current = setInterval(() => {
@@ -187,11 +188,11 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
-  // Perform AI Plate Extraction via API
+  // Perform local OCR directly in the browser
   const triggerOCR = async (testImageBase64?: string, testDetails?: typeof TEST_PLATE_IMAGES[0]) => {
     if (isScanning) return;
     setIsScanning(true);
-    setStatusMessage('YOLO phát hiện biển số! Đang chạy OCR nhận diện...');
+    setStatusMessage('Đang phân tích biển số trực tiếp trên thiết bị...');
     setStatusType('info');
 
     let base64Image = '';
@@ -222,26 +223,28 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
     }
 
     try {
-      const response = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image })
-      });
-      const data = await response.json();
+      const data = testDetails
+        ? {
+            plate_detected: true,
+            plate_number: testDetails.plate,
+            confidence: 98,
+            vehicle_type: testDetails.type,
+            vehicle_color: testDetails.color,
+          }
+        : await recognizePlateFromDataUrl(base64Image);
 
       if (data.plate_detected && data.plate_number) {
-        // If this is a real camera capture, overwrite details with API. Else match sandbox
-        const recognizedPlate = testDetails ? testDetails.plate : data.plate_number;
-        const ocrConfidence = testDetails ? 98 : data.confidence;
-        const ocrType = testDetails ? testDetails.type : data.vehicle_type;
-        const ocrColor = testDetails ? testDetails.color : data.vehicle_color;
+        const recognizedPlate = data.plate_number;
+        const ocrConfidence = data.confidence;
+        const ocrType = data.vehicle_type;
+        const ocrColor = data.vehicle_color;
 
         setResult({
           plate_number: recognizedPlate,
           confidence: ocrConfidence,
           vehicle_type: ocrType,
           vehicle_color: ocrColor,
-          simulated: data.simulated
+          simulated: !!testDetails
         });
 
         // Check OCR confidence limit
@@ -258,8 +261,8 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
         setStatusType('warning');
       }
     } catch (e) {
-      console.error('OCR Process failed:', e);
-      setStatusMessage('Lỗi kết nối máy chủ AI OCR.');
+      console.error('Local OCR process failed:', e);
+      setStatusMessage('Không thể nhận diện biển số cục bộ trên thiết bị.');
       setStatusType('error');
     } finally {
       setIsScanning(false);
@@ -323,10 +326,7 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
       setStatusMessage(`Đang tải ảnh mẫu: ${testItem.plate}...`);
       setStatusType('info');
       
-      // Convert URL to Base64 proxying or directly passing simulation
-      // To bypass CORS block on raw unsplash fetching inside sandboxed client, we send a mockup trigger 
-      // but feed the exact base64 image or preloaded proxy. We'll simply call our OCR endpoint directly 
-      // with a mock image or signal, forcing the backend to return this beautiful test item
+      // Giữ bộ ảnh mẫu để test nhanh giao diện trên desktop mà không cần camera thật.
       triggerOCR('MOCK_TEST_IMAGE_BASE64', testItem);
     } catch (e) {
       console.error(e);
@@ -601,7 +601,7 @@ export default function CameraScanner({ currentUser, onScanSuccess }: CameraScan
             <h4 className="text-xs font-bold text-gray-200 uppercase tracking-wider">Thư viện thử nghiệm (Desktop)</h4>
           </div>
           <p className="text-[11px] text-gray-400 mb-3 leading-normal">
-            Nếu đang chạy thử trên máy tính hoặc môi trường không có camera, hãy click chọn một phương tiện mẫu bên dưới. Hệ thống sẽ gửi hình ảnh sang AI Gemini để nhận diện OCR biển số xe thực tế!
+            Nếu đang chạy thử trên máy tính hoặc môi trường không có camera, hãy click chọn một phương tiện mẫu bên dưới. Hệ thống sẽ dùng bộ nhận diện cục bộ để mô phỏng luồng quét biển số ngay trên trình duyệt.
           </p>
           
           <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">

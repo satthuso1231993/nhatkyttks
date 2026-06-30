@@ -7,38 +7,17 @@ import 'dotenv/config';
 import express from 'express';
 import * as path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
 import { LocalDB } from './src/server/db.js';
 import { Scan, Team } from './src/types.js';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const isVercelRuntime = process.env.VERCEL === '1';
+let appReadyPromise: Promise<void> | null = null;
 
 // Setup JSON parsers with high limits to handle base64 images
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// --- Lazy Initialize Gemini AI Client ---
-let aiClient: GoogleGenAI | null = null;
-function getGeminiAI() {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (key && key !== 'MY_GEMINI_API_KEY') {
-      aiClient = new GoogleGenAI({
-        apiKey: key,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-      console.log('Gemini GenAI client initialized successfully with API key.');
-    } else {
-      console.warn('GEMINI_API_KEY is not configured or uses placeholder. Falling back to local OCR simulator.');
-    }
-  }
-  return aiClient;
-}
 
 // ==========================================
 // API ENDPOINTS
@@ -538,125 +517,55 @@ app.get('/api/logs', async (req, res) => {
   }
 });
 
-// --- OCR AI Engine Endpoint ---
+// --- OCR Endpoint Deprecated: OCR now runs fully in browser ---
 app.post('/api/ocr', async (req, res) => {
-  const { image } = req.body; // Base64 jpeg/png frame
-  if (!image) {
-    res.status(400).json({ error: 'Dữ liệu hình ảnh rỗng.' });
-    return;
-  }
-
-  const ai = getGeminiAI();
-
-  if (ai) {
-    try {
-      // Remove dataurl prefix if exists
-      const cleanBase64 = image.includes('base64,') ? image.split('base64,')[1] : image;
-      
-      const imagePart = {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: cleanBase64,
-        },
-      };
-
-      const prompt = `Bạn là một mô hình AI nhận diện biển số xe chuyên nghiệp cho lực lượng CSGT Việt Nam.
-Hãy phân tích hình ảnh này và trích xuất thông tin biển số xe theo đúng định dạng chuẩn Việt Nam:
-Ví dụ: 
-- Ô tô: 29A-123.45, 30H-999.99, 51F-567.89
-- Xe máy: 29-H1 123.45, 79A1-234.56
-- Xe biển xanh: 80A-123.45
-- Xe biển đỏ: QP-12-34 (nếu có)
-
-Chỉ xuất ra chuỗi JSON có cấu trúc sau, tuyệt đối không thêm bớt văn bản giải thích:
-{
-  "plate_detected": true/false (có phát hiện biển số không),
-  "plate_number": "CHUỖI_BIỂN_SỐ_SAU_KHI_CHUẨN_HÓA_CHỮ_HOA",
-  "confidence": 0-100 (độ tin cậy của OCR, số nguyên),
-  "vehicle_type": "ô tô" | "xe máy" | "chưa rõ",
-  "vehicle_color": "màu sắc xe phát hiện được"
-}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [imagePart, prompt],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              plate_detected: { type: Type.BOOLEAN },
-              plate_number: { type: Type.STRING },
-              confidence: { type: Type.INTEGER },
-              vehicle_type: { type: Type.STRING },
-              vehicle_color: { type: Type.STRING }
-            },
-            required: ['plate_detected', 'plate_number', 'confidence']
-          }
-        }
-      });
-
-      const text = response.text;
-      if (text) {
-        const result = JSON.parse(text.trim());
-        res.json(result);
-        return;
-      }
-    } catch (error) {
-      console.error('Gemini OCR API Error:', error);
-      // Fallback to simulator below on failure
-    }
-  }
-
-  // --- Fallback high-fidelity OCR simulation ---
-  // If API key is missing or model throws an error, we provide a smart mock simulation
-  // that extracts fake plates or standard test formats to make the app fully usable instantly.
-  const commonPlates = [
-    { plate_number: '29A-888.88', confidence: 98, vehicle_type: 'ô tô', vehicle_color: 'Trắng' },
-    { plate_number: '30H-125.68', confidence: 95, vehicle_type: 'ô tô', vehicle_color: 'Đen' },
-    { plate_number: '51F-777.79', confidence: 97, vehicle_type: 'ô tô', vehicle_color: 'Đỏ' },
-    { plate_number: '29-H1 889.33', confidence: 92, vehicle_type: 'xe máy', vehicle_color: 'Xanh dương' },
-    { plate_number: '43A-666.88', confidence: 96, vehicle_type: 'ô tô', vehicle_color: 'Vàng' },
-    { plate_number: '79B-012.89', confidence: 94, vehicle_type: 'ô tô', vehicle_color: 'Bạc' }
-  ];
-
-  // Pick random plate
-  const mockResult = commonPlates[Math.floor(Math.random() * commonPlates.length)];
-  
-  // Wait 1 second to simulate real network/AI delay
-  setTimeout(() => {
-    res.json({
-      plate_detected: true,
-      ...mockResult,
-      simulated: true
-    });
-  }, 1000);
+  res.status(410).json({
+    error: 'OCR đã được chuyển sang chạy cục bộ trên trình duyệt. Endpoint /api/ocr không còn được sử dụng.',
+  });
 });
 
 // ==========================================
 // VITE MIDDLEWARE SETUP
 // ==========================================
 
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-    console.log('Vite development middleware integrated.');
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    console.log('Serving production static files from dist.');
+async function ensureAppReady() {
+  if (appReadyPromise) {
+    return appReadyPromise;
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CSGT Plate Scanner app running on http://localhost:${PORT}`);
+  appReadyPromise = (async () => {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('Vite development middleware integrated.');
+      return;
+    }
+
+    if (!isVercelRuntime) {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+      console.log('Serving production static files from dist.');
+    }
+  })();
+
+  return appReadyPromise;
+}
+
+if (!isVercelRuntime) {
+  ensureAppReady().then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`CSGT Plate Scanner app running on http://localhost:${PORT}`);
+    });
   });
 }
 
-startServer();
+export default async function handler(req: any, res: any) {
+  await ensureAppReady();
+  return app(req, res);
+}
